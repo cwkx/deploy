@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>life</title>
     <style>
+        /* Your existing styles */
         html, body {
             margin: 0;
             padding: 0;
@@ -37,6 +38,7 @@
             cursor: pointer;
             user-select: none;
         }
+        /*
         #debug {
             position: fixed;
             top: 0;
@@ -47,7 +49,7 @@
             padding: 10px;
             z-index: 1000;
             pointer-events: none;
-        }
+        }*/
     </style>
 </head>
 <body>
@@ -79,6 +81,7 @@
             if (consoleLog.length > 10) consoleLog.shift();
         };
 
+        /*
         function updateDebug() {
             setTimeout(updateDebug, 500); // Update every 500ms instead of every frame
             frames++;
@@ -88,29 +91,61 @@
                 frames = 0;
                 lastTime = now;
             }
-            
+
+            // Uncomment the following lines to enable debug display
             debug.textContent = `FPS: ${fps}
                 Screen: ${window.innerWidth}x${window.innerHeight}
                 Pixel Ratio: ${window.devicePixelRatio}
                 User Agent: ${navigator.userAgent}
-
                 Console Output:
                 ${consoleLog.join('\n')}`;
+            
         }
-        updateDebug();
+        updateDebug();*/
     </script>
     <script>
-        // Add stdout/stderr printing for Emscripten
         var Module = {
             print: function(text) { console.log(text); },
             printErr: function(text) { console.log('ERR:', text); },
-            canvas: document.getElementById('canvas')
+            canvas: document.getElementById('canvas'),
+            
+            loadFile: function(path) {
+                const fullPath = path.startsWith('/') ? path : '/' + path;
+                console.log('Loading asset:', path);
+                
+                fetch(path)
+                    .then(response => {
+                        if (!response.ok) throw new Error('HTTP error ' + response.status);
+                        return response.arrayBuffer();
+                    })
+                    .then(buffer => {
+                        const uint8Array = new Uint8Array(buffer);
+                        try {
+                            FS.writeFile(fullPath, uint8Array);
+                            // Ensure file is fully committed
+                            FS.syncfs(false, function(err){
+                                if (!err) {
+                                    Module.ccall('on_file_loaded', null, ['string'], [fullPath]);
+                                } else {
+                                    console.error('syncfs error:', err);
+                                    Module.ccall('on_file_loaded_error', null, ['string'], [err]);
+                                }
+                            });
+                        } catch (e) {
+                            console.error('File write error:', e);
+                            Module.ccall('on_file_loaded_error', null, ['string'], [e.message]);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('File load error:', error);
+                        Module.ccall('on_file_loaded_error', null, ['string'], [error.message]);
+                    });
+            }
         };
-        
+
         document.addEventListener('click', async function startGame() {
             document.getElementById('start-message').style.display = 'none';
-            
-            // Request fullscreen on mobile
+
             if (/Mobi|Android/i.test(navigator.userAgent)) {
                 try {
                     await Module.canvas.requestFullscreen();
@@ -118,7 +153,7 @@
                     console.log("Fullscreen request failed:", e);
                 }
             }
-            
+
             await window.initAudio();
             const script = document.createElement('script');
             script.src = 'main.js';
