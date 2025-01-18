@@ -109,39 +109,41 @@
             printErr: function(text) { console.log('ERR:', text); },
             canvas: document.getElementById('canvas'),
             
-            loadFile: function(path) {
-                const fullPath = path.startsWith('/') ? path : '/' + path;
-                console.log('Loading asset:', path);
-                
-                fetch(path)
-                    .then(response => {
-                        if (!response.ok) throw new Error('HTTP error ' + response.status);
-                        return response.arrayBuffer();
-                    })
-                    .then(buffer => {
-                        const uint8Array = new Uint8Array(buffer);
-                        try {
-                            FS.writeFile(fullPath, uint8Array);
-                            // Ensure file is fully committed
-                            FS.syncfs(false, function(err){
-                                if (!err) {
-                                    Module.ccall('on_file_loaded', null, ['string'], [fullPath]);
-                                } else {
-                                    console.error('syncfs error:', err);
-                                    Module.ccall('on_file_loaded_error', null, ['string'], [err]);
-                                }
-                            });
-                        } catch (e) {
-                            console.error('File write error:', e);
-                            Module.ccall('on_file_loaded_error', null, ['string'], [e.message]);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('File load error:', error);
-                        Module.ccall('on_file_loaded_error', null, ['string'], [error.message]);
-                    });
+            loadFile: async function(path) {
+                try {
+                    const response = await fetch(path);
+                    if (!response.ok) {
+                        throw new Error('HTTP error ' + response.status);
+                    }
+                    const buffer = await response.arrayBuffer();
+                    const data = new Uint8Array(buffer);
+                    
+                    const ptr = Module._malloc(data.length);
+                    if (!ptr) {
+                        throw new Error('Out of memory');
+                    }
+                    
+                    Module.HEAPU8.set(data, ptr);
+                    Module.ccall('storage_on_file_loaded', null, 
+                        ['string', 'number', 'number'],
+                        [path, ptr, data.length]
+                    );
+                    Module._free(ptr);
+                    
+                } catch(e) {
+                    console.error('Failed to load', path, ':', e);
+                    Module.ccall('storage_on_file_loaded', null,
+                        ['string', 'number', 'number'],
+                        [path, 0, 0]
+                    );
+                }
             }
         };
+
+        // Add warning for unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+        });
 
         document.addEventListener('click', async function startGame() {
             document.getElementById('start-message').style.display = 'none';
