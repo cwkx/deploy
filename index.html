@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>life</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        #canvas {
+            display: block;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100vw;
+            height: 100vh;
+        }
+        #canvas:fullscreen, #canvas:-webkit-full-screen {
+            width: 100vw !important;
+            height: 100vh !important;
+        }
+        #start-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 24px;
+            cursor: pointer;
+            user-select: none;
+        }
+        #debug {
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: rgba(54, 54, 54, 0.7);
+            color: white;
+            font-family: monospace;
+            padding: 10px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="start-message">Press anywhere to start</div>
+    <div id="debug"></div>
+    <script type="module">
+        import {ChiptuneJsPlayer} from './lib/chiptune3.min.js';
+        window.initAudio = async () => {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+            window.chiptune = new ChiptuneJsPlayer();
+            await new Promise(resolve => window.chiptune.onInitialized(resolve));
+            window.audioInitialized = true;
+        };
+
+        // Enhanced debug monitoring
+        const debug = document.getElementById('debug');
+        let lastTime = performance.now();
+        let frames = 0;
+        let fps = 0;
+        let consoleLog = [];
+
+        // Capture C stdout/stderr
+        const originalConsoleLog = console.log;
+        console.log = (...args) => {
+            originalConsoleLog.apply(console, args);
+            consoleLog.push(args.join(' '));
+            if (consoleLog.length > 10) consoleLog.shift();
+        };
+
+        function updateDebug() {
+            setTimeout(updateDebug, 500); // Update every 500ms instead of every frame
+            frames++;
+            const now = performance.now();
+            if (now - lastTime >= 1000) {
+                fps = frames;
+                frames = 0;
+                lastTime = now;
+            }
+            
+            debug.textContent = `FPS: ${fps}
+                Screen: ${window.innerWidth}x${window.innerHeight}
+                Pixel Ratio: ${window.devicePixelRatio}
+                User Agent: ${navigator.userAgent}
+
+                Console Output:
+                ${consoleLog.join('\n')}`;
+        }
+        updateDebug();
+    </script>
+    <script>
+        // Add stdout/stderr printing for Emscripten
+        var Module = {
+            print: function(text) { console.log(text); },
+            printErr: function(text) { console.log('ERR:', text); },
+            canvas: document.getElementById('canvas')
+        };
+        
+        document.addEventListener('click', async function startGame() {
+            document.getElementById('start-message').style.display = 'none';
+            
+            // Request fullscreen on mobile
+            if (/Mobi|Android/i.test(navigator.userAgent)) {
+                try {
+                    await Module.canvas.requestFullscreen();
+                } catch(e) {
+                    console.log("Fullscreen request failed:", e);
+                }
+            }
+            
+            await window.initAudio();
+            const script = document.createElement('script');
+            script.src = 'main.js';
+            document.body.appendChild(script);
+            document.removeEventListener('click', startGame);
+        }, {once: true});
+    </script>
+</body>
+</html>
